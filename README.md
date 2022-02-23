@@ -1,2 +1,3 @@
 # SoundScapes
 The project contains the NetLogo source code for the model described in Toth et al. 2022. It simulates vehicle traffic, wildlife movements, and the masking effects of noise.
+The initial vesion was created by Benjamin Pauli (Saint Mary's University of Minnesota). Kurt Fristrup (Colorado State University) revised the model to add vehicles as a new class of agents that move, interact, and generate noise. Noise propagation is modeled based on 1/3rd octave band spectra using ISO-9613 standard procedures. The model includes the capability to model the effectiveness of bioacoustical monitoring arrays with and without transportation noise. Though the present version of the model emphasizes road traffic, NMSim sources exist to model aircraft noise.
