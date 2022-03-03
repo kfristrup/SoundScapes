@@ -1,20 +1,24 @@
-; modeling noise effects on wildlife. Created by Ben Pauli, Chris McClure, Jesse Barber
-; Kurt Fristrup revised the sound propagation and noise source code
+; modeling noise effects on wildlife. Created by Ben Pauli (Saint Mary's University of Minnesota), Chris McClure, Jesse Barber
+; Cory Toth led the publication
+; Kurt Fristrup (Colorado State University) revised the sound propagation and noise source code
 ;; introduced vehicles with calibrated source spectra and driver behavior (congestion)
 ;; converted to 1/3rd octave bands, ISO-9613 procedures
 ;; pressure squared calculations for spectral propagation until the terminal step for speed
 ;; lookup tables avoid ISO-9613 computations during ticks loop
 ;;;; for A-weighted calculations, ISO-9613 and spectral calculations used to create the distance-speed lookup table
-;;;; spectral code conserved for future d-prime audibility calculations; Cory Toth led the publication
+;;;; spectral code conserved for future d-prime audibility calculations
 ; PENDING UPGRADES
 ; aggregate vehicle noise sources at high traffic densities to accelerate computation
-; add options for intermittent audible cues for resources and birds
-;; would affect movements when resources are visited: backwards visits
+;; group either by segments of road or clusters of vehicles, add noise together, and compute attenuation for an appropriate "average" path
+; add options for intermittent audible cues for resources and searchers
+;; would affect movements when resources are visited: course reversals would be possible
 ;; possible emergent interactions with timescales of noise events and searcher transit times
 ; use d-prime to determine audibility for wildlilfe and humans
-; behavioral interactions between vehicles (drivers) and wildlife
+; behavioral interactions among vehicles (drivers) and wildlife
 ;; recode to allow x-axis to have min-pxcor = ( - max-pxcor ) for crossing/collision simulations
+; could introduce new agents as "hikers", and investigate wildlife-hiker interactions mediated by sound
 ; OPTION: might have used the LevelSpace extension to create the road (?execution speed?)
+; Fristrup sought to use NetLogo hyphenated idiom, but some camel case and other names persist in the code
 
 breed [ vehicles vehicle ]
 breed [ searchers searcher ]
@@ -56,12 +60,12 @@ vehicles-own [ ; vehicles before patches: potential noise-sensitive resources
   speed-pps ; patches per second
   vspeed-limit ; m/s
 ]
-patches-own [ ;landscape variables
-  hab ; habitat type - matrix, resource, trail or road
+patches-own [ ; landscape variables
+  hab ; habitat type - matrix, resource, trail, or road
   quality ; quality of resource (1-100): not used for resource visitation or settlement at present
   ; times-visited: now tracked by searchers as an agentset
 ]
-searchers-own [ ;searcher variables
+searchers-own [ ; searcher variables
   moving-to ; resource searcher is moving towards
   heard-not-visited ; candidates for moving-to
   resources-visited ; resources seen by the searcher
@@ -115,7 +119,7 @@ to setup-stations
   let station-locations ( patch-set reduce sentence (
     map [ x -> map [ y -> patch x y ] py-locations ] px-locations ) )
   ; for bioacoustic monitoring replace the patch-set in the next line with appropriate pxcor and pycor values
-  create-stations ( length px-locations ) * ( length py-locations ) ;
+  create-stations ( length px-locations ) * ( length py-locations )
   [
     set shape "person student"
     set size 10
@@ -137,7 +141,7 @@ to setup-stations
     set absence-durations []
     set detection-durationsNN []
     set absence-durationsNN []
-    ; ?could? expand to keep detection and absence durations per searcer (excess detail?)
+    ; ?could? expand to keep detection and absence durations per searcher (excess detail?)
     if calc-noise [
       turtle-noise
       ; sound-history gets initialized by station-check
@@ -159,20 +163,24 @@ to-report cumsum [ lst ]
   report butfirst reduce [ [ csum next-item ] -> lput ( next-item + last
     csum ) csum ] fput [0] lst
 end ; used in noise sensitive resource settlement
-    ; inverse of cumsum, discrete equivalent of differentiation
+
+; inverse of cumsum, discrete equivalent of differentiation
 to-report diff [ lst ]
   report ( map [ [ z y ] -> z - y ] ( but-first lst ) ( but-last lst ) )
 end ; may not need this: complements cumsum
-    ; returns a list with the unique items from the input list
+
+; returns a list with the unique items from the input list
 to-report unique [ lst ]
   report reduce [ [ uniq nxt ] ->
     ifelse-value member? nxt uniq [ uniq ] [ fput nxt uniq ] ] fput [] lst
 end
+
 ; flatten nested lists
 to-report unnest [ xs ] ; used in the BehaviorSpace reporters
   let ys reduce sentence xs
   report ifelse-value (reduce or map is-list? ys) [ unnest ys ] [ ys ]
 end
+
 ; splits strings into words using delimiters
 to-report str-split [ string delim ]
   ; split the string up into individual characters
@@ -185,12 +193,14 @@ to-report str-split [ string delim ]
   ] characters
   report output
 end
+
 ; converting strings to values, flattens nested lists
 to-report read-from-list [ x ]
   report ifelse-value is-list? x
     [ map read-from-list x ]
   [ read-from-string x ]
 end
+
 ; bisection search: find the iterval covering val
 to-report hash-idx [ val lst ]
   let bot 0
@@ -204,6 +214,7 @@ to-report hash-idx [ val lst ]
   ]
   report bot
 end
+
 ; utility to displace a second vehicle from landing on a patch
 to separate-vehicles
   if any? other vehicles-here [
@@ -211,8 +222,9 @@ to separate-vehicles
     separate-vehicles
   ]
 end ; exaggerates separation relative to what happens dynamically: legacy from Simple Traffic library model
-    ; utility used for noise-sensitive resource placement
-    ; NOTE: THE INPUT MUST BE SORTED
+
+; utility used for noise-sensitive resource placement
+; NOTE: THE INPUT MUST BE SORTED
 to-report pxcor-replicates [ sorted-pxcor-list ]
   let rslt reduce [
     [ sofar nxt ] ->  ( ifelse-value
@@ -221,7 +233,8 @@ to-report pxcor-replicates [ sorted-pxcor-list ]
       [ ( fput nxt fput 1 sofar ) ] ) ] fput [] sorted-pxcor-list
   report rslt
 end ; reports a list of pxcor-count pairs for resource placement
-    ; utility to setup-resources
+
+; utility to setup-resources
 to make-resource
   set hab "resource"
   set pcolor blue
@@ -243,10 +256,12 @@ to-report get-coefs [ file-name ]
   file-close
   report vehicle-coefs
 end
+
 ; returns list of P^2 from a list of dB
 to-report anti-dB [ dB-val-list ]
   report map [ x -> 10 ^ ( x / 10 ) ] dB-val-list
 end
+
 ; ISO-9613 ground attenuation
 to-report atten-ground [ lat-metrs height-metrs freqhz]
   let oneEdp50 1 - exp ( ( - lat-metrs ) / 50 )
@@ -264,6 +279,7 @@ to-report atten-ground [ lat-metrs height-metrs freqhz]
     [ -1.5 + ground-hardness * ( 1.5 + 5.0 * exp ( -0.9 * height-metrs ^ 2 ) * ( 1 - exp ( -1 * lat-metrs / 50 ) ) ) ]
     [ -1.5 * ( 1 - ground-hardness ) ] )
 end
+
 ; ISO-9613 total attenuation, returns decibels
 to-report iso-9613 [ lateral-meters frq ]
   let p0  101.325
@@ -295,11 +311,13 @@ to-report fast-noise [ m-per-sec meters ]
   report ( reduce + ( reduce [ [ acc b ] -> ( map * acc b ) ]
     ( list aWt ( speed2spec ( m-per-sec ) ) ( anti-dB map [ frq -> ( - iso-9613 meters frq ) ] freqs ) ) ) )
 end
+
 ; utility for interactive A-weighted attenuation calculations
 ; not used in the code
 to-report fast-atten [ meters ]
   report 10 * log ( reduce + ( map * ( atten-interpolate meters ) aWt ) ) 10
 end
+
 ; creates the range-speed lookup table for A-weighted, pressure-squared, received level
 to make-noise-table [ r-points ]
   set speed-points n-values ( speed-max + 1 ) [ j -> j + 1 ]
@@ -370,6 +388,7 @@ to-report noise-turtles-spec
   ; could use d-prime to determine audibility
   report tot-noiz
 end
+
 ; calculates p^2 1/3rd OB noise + ambient spectrum for a patch assuming uniform traffic on the road
 ; could be used to influence settlement probabilities using d-prime criteria
 to-report settlement-noise-spec [ x-patch ]
@@ -398,6 +417,7 @@ to-report settlement-noise-spec [ x-patch ]
   report tot-noiz
   ; A-weight the spectrum and sum
 end
+
 ; calculate total noise received by a searcher
 to-report noise-turtles
   ; asked of searchers or stations, sums over vehicles
@@ -424,6 +444,7 @@ to-report noise-turtles
   ; report ( reduce + ( map * tot-noiz aWt ) )
   report 10 * log tot-noiz 10
 end
+
 ; calculates total A-weighted noise landing on a patch from uniform traffic on the road
 to-report settlement-noise [ x-patch ]
   ; let tot-noiz ambi-spectrum
@@ -455,7 +476,8 @@ to-report settlement-noise [ x-patch ]
   ; report reduce + ( map * tot-noiz aWt )
   ; A-weight the spectrum and sum
 end
-    ; get noise exposure, set percept and visible indicators
+
+; get noise exposure, set percept and visible indicators
 to turtle-noise
   set sound noise-turtles
   set percept base-percept-patches * 10 ^ ( ( ambient-level - sound ) / 10 )
@@ -505,6 +527,7 @@ to setup-constants
   set aWt map [ x -> 10 ^ ( x / 10 ) ] [ -44.7 -39.4 -34.6 -30.2 -26.2 -22.5 -19.1 -16.1 -13.4 -10.9 -8.6 -6.6
     -4.8 -3.2 -1.9 -0.8 0.0 0.6 1.0 1.2 1.3 1.2 1.0 0.5 ]
 end
+
 ; mainly patch coloring, but effectively excludes resources from the road
 to setup-patch
   ( ifelse pxcor = 0 [
@@ -520,6 +543,7 @@ to setup-patch
     [ set pcolor white ] ; no other patch setup at present
   )
 end
+
 ; ambient and vehicle spectral setup
 to setup-spectra
   set ambi-spectrum anti-dB ( n-values 24 [ j -> 12 - j ] )
@@ -533,7 +557,8 @@ to setup-spectra
   set src-coefs ifelse-value "sedan" = veh-name [ get-coefs "CarCoef2.tsv" ] [ get-coefs "MotoCoef2.tsv" ]
   set src-pow 2
 end
-; 6.7056 11.1760 24.5872 m/s
+
+; NMSim source speeds: 6.7056 11.1760 24.5872 m/s
 to setup-vehicles
   if num-vehicles > world-width * world-height / 20 [
     user-message (word
@@ -563,6 +588,7 @@ to setup-vehicles
   ]
   if vpass-probability < 1.0 [ repeat 1000 [ move-vehicles ] ] ; equilibrate traffic
 end
+
 to setup-resources ; two resources cannot land on the same patch, but no other constraint on proximity
   ifelse noise-affects-resources? = true and calc-noise
   [
@@ -578,8 +604,9 @@ to setup-resources ; two resources cannot land on the same patch, but no other c
     [ make-resource ]
   ]
 end
+
 to setup-searchers
-  create-searchers num-searchers ;
+  create-searchers num-searchers
   [
     set shape "circle"
     move-to one-of patches with [ pcolor = white ]
@@ -622,6 +649,7 @@ to setup-searchers
     ]
   ]
 end
+
 to setup
   clear-all
   random-seed new-seed
@@ -659,6 +687,7 @@ to-report caught-vehicles
       ( [ ycor + speed-pps ]  of myself ) ) ]
   ; can calculate even if cannot make this move without wraparound
 end
+
 to move-vehicles
   let sorted-vehicles sort-on [ xcor * ( 2 * max-pycor + 1 ) + ycor ] vehicles
   ; ESSENTIAL: ensures predictable order of processing to avoid ambiguities in overtaken calculations
@@ -688,6 +717,7 @@ to move-vehicles
     ]
   ] ; foreach sorted vehicle
 end
+
 ; check stations
 to station-check ; assumes human-mult >=0: speeds up execution
   ask stations [
@@ -747,6 +777,7 @@ to station-check ; assumes human-mult >=0: speeds up execution
     ]
   ] ; ask stations
 end
+
 to birdable-check ;
 ;  show ( word "ycor: " precision ycor 2 " hmPrcpt: " precision ( human-Mult * percept ) 2 " lasttick: " birdable-lasttick )
   ifelse abs ycor < ( human-Mult * base-percept-patches ) [
@@ -786,6 +817,7 @@ to birdable-check ;
     ask ( patch pxcor 0 ) [ set pcolor yellow ] ;
   ]
 end
+
 to move-searcher
   ifelse moving-to != nobody or any? heard-not-visited [ ; approach phase
     set color lime ;
@@ -828,6 +860,7 @@ to move-searcher
     fd sspeed-patches
   ] ; ifelse end approach-movement
 end
+
 ; states: moving to resource, searching
 to update-searchers
   ask searchers[
@@ -850,6 +883,7 @@ to update-searchers
     ]
   ] ; ask searchers
 end
+
 to go
   tick
   ; this command creats the fading tails for each searcher on the birding path, blending towards white
